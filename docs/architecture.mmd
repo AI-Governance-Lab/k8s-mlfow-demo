@@ -1,18 +1,16 @@
 flowchart LR
-  U[Client Browser / App] -->|HTTP :30500| SVC[Service: NodePort (mlflow)]
-  SVC --> POD[Deployment: mlflow pod]
-  POD -->|Backend store| PG[(PostgreSQL - Bitnami)]
-  POD -->|Artifacts (S3 API)| MINIO[(MinIO - Bitnami)]
+  U["Client Browser or App"] -->|HTTP:30500| SVC["Service - NodePort mlflow"]
+  SVC --> POD["Deployment - mlflow"]
+  POD -->|Backend store| PG["PostgreSQL Bitnami"]
+  POD -->|Artifacts via S3 API| MINIO["MinIO Bitnami"]
 
-  subgraph k3s Cluster (mlflow namespace)
+  subgraph "k3s Cluster (namespace mlflow)"
     SVC
     POD
     PG
     MINIO
-    subgraph Storage (nfs-client)
-      PVCpg[(PVC for PostgreSQL)]
-      PVCminio[(PVC for MinIO)]
-    end
+    PVCpg["PVC for PostgreSQL"]
+    PVCminio["PVC for MinIO"]
   end
 
   PG --- PVCpg

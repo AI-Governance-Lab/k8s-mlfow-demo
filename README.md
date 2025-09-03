@@ -78,20 +78,18 @@ kubectl delete ns mlflow
 
 ```mermaid
 flowchart LR
-  U["Client Browser / App"] -->|HTTP :30500| SVC["Service: NodePort (mlflow)"]
-  SVC --> POD["Deployment: mlflow"]
-  POD -->|Backend store| PG["PostgreSQL (Bitnami)"]
-  POD -->|Artifacts (S3 API)| MINIO["MinIO (Bitnami)"]
+  U["Client Browser or App"] -->|HTTP:30500| SVC["Service - NodePort mlflow"]
+  SVC --> POD["Deployment - mlflow"]
+  POD -->|Backend store| PG["PostgreSQL Bitnami"]
+  POD -->|Artifacts via S3 API| MINIO["MinIO Bitnami"]
 
-  subgraph "k3s Cluster (namespace: mlflow)"
+  subgraph "k3s Cluster (namespace mlflow)"
     SVC
     POD
     PG
     MINIO
-    subgraph "Storage (nfs-client)"
-      PVCpg["PVC for PostgreSQL"]
-      PVCminio["PVC for MinIO"]
-    end
+    PVCpg["PVC for PostgreSQL"]
+    PVCminio["PVC for MinIO"]
   end
 
   PG --- PVCpg
@@ -99,6 +97,6 @@ flowchart LR
 ```
 
 Summary:
-- MLflow exposed via NodePort (default 30500) on all nodes.
-- PostgreSQL stores runs/metadata; MinIO stores artifacts in bucket mlflow-artifacts.
-- Both use PVCs with the nfs-client StorageClass (switch to local-path if needed).
+- MLflow via NodePort (default 30500) on all nodes.
+- PostgreSQL stores metadata; MinIO stores artifacts in bucket mlflow-artifacts.
+- PVCs use nfs-client (switch to local-path if needed).
