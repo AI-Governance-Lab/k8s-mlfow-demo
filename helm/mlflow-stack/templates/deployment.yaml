@@ -22,6 +22,20 @@ spec:
           envFrom:
             - secretRef:
                 name: {{ .Release.Name }}-mlflow-config
+          env:
+            - name: MLFLOW_GUNICORN_CMD_ARGS
+              value: "{{ .Values.mlflow.gunicornCmdArgs }}"
+{{- if .Values.mlflow.installPipPackages }}
+          command: ["/bin/sh","-c"]
+          args:
+            - >-
+              pip install --no-cache-dir {{ join " " .Values.mlflow.installPipPackages }}
+              && exec mlflow server
+              --host=0.0.0.0
+              --port=5000
+              --backend-store-uri=$(BACKEND_STORE_URI)
+              --default-artifact-root=s3://{{ .Values.mlflow.artifactBucket }}
+{{- else }}
           args:
             - mlflow
             - server
@@ -29,5 +43,14 @@ spec:
             - --port=5000
             - --backend-store-uri=$(BACKEND_STORE_URI)
             - --default-artifact-root=s3://{{ .Values.mlflow.artifactBucket }}
+{{- end }}
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 5000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
           resources:
 {{- toYaml .Values.mlflow.resources | nindent 12 }}
