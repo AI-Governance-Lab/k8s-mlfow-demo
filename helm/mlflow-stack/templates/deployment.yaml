@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-mlflow
+  namespace: {{ .Values.global.namespace }}
+spec:
+  replicas: {{ .Values.mlflow.replicas }}
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}-mlflow
+  template:
+    metadata:
+      labels:
+        app: {{ .Release.Name }}-mlflow
+    spec:
+      containers:
+        - name: mlflow
+          image: {{ .Values.mlflow.image }}
+          imagePullPolicy: {{ .Values.mlflow.imagePullPolicy }}
+          ports:
+            - containerPort: 5000
+          envFrom:
+            - secretRef:
+                name: {{ .Release.Name }}-mlflow-config
+          args:
+            - mlflow
+            - server
+            - --host=0.0.0.0
+            - --port=5000
+            - --backend-store-uri=$(BACKEND_STORE_URI)
+            - --default-artifact-root=s3://{{ .Values.mlflow.artifactBucket }}
+          resources:
+{{- toYaml .Values.mlflow.resources | nindent 12 }}

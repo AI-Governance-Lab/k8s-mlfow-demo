@@ -1,0 +1,67 @@
+# Global knobs
+global:
+  namespace: mlflow
+
+# PostgreSQL (Bitnami)
+postgresql:
+  enabled: true
+  auth:
+    username: mlflow
+    password: mlflowpass
+    database: mlflow
+  primary:
+    persistence:
+      enabled: true
+      size: 8Gi
+      storageClass: nfs-client # change to "local-path" if preferred
+    resources:
+      requests:
+        cpu: 50m
+        memory: 256Mi
+      limits:
+        cpu: 500m
+        memory: 512Mi
+
+# MinIO (Bitnami)
+minio:
+  enabled: true
+  defaultBuckets: mlflow-artifacts
+  auth:
+    rootUser: mlflow
+    rootPassword: mlflowminio
+  persistence:
+    enabled: true
+    size: 10Gi
+    storageClass: nfs-client # change to "local-path" if preferred
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  service:
+    type: ClusterIP
+  mode: standalone
+
+# MLflow server
+mlflow:
+  image: ghcr.io/mlflow/mlflow:latest
+  imagePullPolicy: IfNotPresent
+  replicas: 1
+  artifactBucket: mlflow-artifacts
+
+  # Service options
+  service:
+    type: NodePort
+    port: 5000
+    nodePort: 30500
+
+  # Resources (small defaults)
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi

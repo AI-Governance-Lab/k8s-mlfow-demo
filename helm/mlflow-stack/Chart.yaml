@@ -1,0 +1,16 @@
+apiVersion: v2
+name: mlflow-stack
+description: Minimal MLflow stack (MLflow + PostgreSQL + MinIO) for k3s
+type: application
+version: 0.1.0
+appVersion: "2.15.1"
+
+dependencies:
+  - name: postgresql
+    repository: https://charts.bitnami.com/bitnami
+    version: ">=12.0.0"
+    condition: postgresql.enabled
+  - name: minio
+    repository: https://charts.bitnami.com/bitnami
+    version: ">=12.0.0"
+    condition: minio.enabled

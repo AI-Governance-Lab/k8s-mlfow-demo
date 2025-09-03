@@ -1,0 +1,11 @@
+MLflow installed.
+
+Access:
+  URL: http://<any-node-ip>:{{ .Values.mlflow.service.nodePort }}
+
+Kube:
+  kubectl -n {{ .Values.global.namespace }} get pods
+  kubectl -n {{ .Values.global.namespace }} get svc
+
+Uninstall:
+  helm uninstall {{ .Release.Name }} -n {{ .Values.global.namespace }}
