@@ -374,4 +374,4 @@ PY
   ---
 
 📌 Notes  
-This repository is maintained as part of my personal learning and PoC development for LLMOPS and AI Governance.
+This repository is maintained as part of my personal learning and PoC development for LLMOps and AI Governance.
