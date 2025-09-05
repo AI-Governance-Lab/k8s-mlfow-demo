@@ -370,3 +370,8 @@ PY
       curl -sS http://mlflow-mlflow.mlflow.svc.cluster.local:5000/ >/dev/null && echo "HTTP OK"; \
       curl -sS http://mlflow-mlflow.mlflow.svc.cluster.local:5000/api/2.0/mlflow/experiments/list >/dev/null && echo "API OK"'
   ```
+
+  ---
+
+📌 Notes  
+This repository is maintained as part of my personal learning and PoC development for LLMOPS and AI Governance.
