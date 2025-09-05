@@ -3,14 +3,15 @@
 Deploy MLflow 3.3.2 tracking on k3s with PostgreSQL + MinIO, including LLMOps basics and examples.
 
 ## What is MLflow (for managers)
-MLflow is a system of record for machine learning, LLMs and AI work. It keeps track of:
-- What you tried (experiments, parameters, code version)
-- What happened (metrics, charts, artifacts like models and plots)
-- What you kept (registered “best” models and versions)
+MLflow is a system of record for AI work—covering traditional machine learning and modern generative AI (LLMs, chatbots, AI agents). It helps teams:
+- Track what you tried: experiments, parameters, prompt templates, data and code versions
+- See what happened: metrics, evaluation reports, charts, model and output artifacts, latency and token/cost stats
+- Keep what worked: register approved models, prompts, and configurations with versioning and stages (Dev/Staging/Production)
+
 Value:
-- Faster iteration and collaboration (everyone sees comparable results)
+- Faster iteration and fair comparisons
 - Reproducibility and auditability (who ran what, with which data/code)
-- Smoother handoffs from experimentation to deployment
+- Smoother deployment, approvals, and rollbacks
 
 ## What is LLMOps
 LLMOps = the processes and tools to reliably build, ship, and run LLM apps—like DevOps/MLOps for generative AI.
