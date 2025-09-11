@@ -61,6 +61,7 @@ Defaults target small clusters (nfs-client StorageClass, 1 replica, modest resou
 - [Architecture](#architecture)
 - [Repository layout](#repository-layout)
 - [Troubleshooting](#troubleshooting)
+  - [AI agent sample (watsonx-ai-agent01) — usable from MLflow](#ai-agent-sample-watsonx-ai-agent01--usable-from-mlflow)
 
 This chart deploys a small-footprint MLflow stack:
 - PostgreSQL (Bitnami) as backend store
@@ -371,7 +372,40 @@ PY
       curl -sS http://mlflow-mlflow.mlflow.svc.cluster.local:5000/api/2.0/mlflow/experiments/list >/dev/null && echo "API OK"'
   ```
 
-  ---
+### AI agent sample (watsonx-ai-agent01) — usable from MLflow
+Use the bundled FastAPI-based LLM agent to generate text and log results into MLflow.
+
+- Location: llmops/ai_agents/watsonx-ai-agent01-k8s
+- Service (NodePort): http://<node-ip>:30005
+- Endpoints: GET /health, POST /v1/generate, Swagger: /docs
+
+Quick test:
+```bash
+curl -sS -X POST http://<node-ip>:30005/v1/generate \
+  -H "Content-Type: application/json" \
+  -d '{ "prompt": "Explain Kubernetes briefly.", "max_new_tokens": 128, "temperature": 0.7 }'
+```
+
+Use from MLflow:
+```python
+import os, requests, mlflow
+os.environ["MLFLOW_TRACKING_URI"] = "http://<node-ip>:30500"
+AGENT = "http://<node-ip>:30005"
+
+with mlflow.start_run(run_name="agent-demo"):
+    payload = {"prompt": "Summarize MLflow in 3 bullets.", "max_new_tokens": 100, "temperature": 0.7}
+    r = requests.post(f"{AGENT}/v1/generate", json=payload, timeout=60)
+    r.raise_for_status()
+    out = r.json()
+    mlflow.log_params({k:v for k,v in payload.items() if k!="prompt"})
+    mlflow.log_text(payload["prompt"], "prompt.txt")
+    mlflow.log_text(out.get("generated_text",""), "response.txt")
+```
+
+Details and configuration:
+- See the agent’s README: [llmops/ai_agents/watsonx-ai-agent01-k8s/README.md](llmops/ai_agents/watsonx-ai-agent01-k8s/README.md)
+
+---
 
 📌 Notes  
-This repository is maintained as part of my personal learning and PoC development for LLMOps and AI Governance.
+This repository is maintained as part of my personal learning and PoC development for AI Governance.
