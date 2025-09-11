@@ -24,11 +24,17 @@ IBM_API_KEY = os.getenv("IBMCLOUD_API_KEY", "")
 VERIFY_TLS = os.getenv("WATSONX_VERIFY_TLS", "true").lower() != "false"
 WATSONX_USE_CHAT = os.getenv("WATSONX_USE_CHAT", "false").lower() == "true"  # toggle chat vs generation
 
+# Add these missing constants
 IAM_TOKEN_URL = "https://iam.cloud.ibm.com/identity/token"
-WATSONX_GENERATE_URL = f"{API_URL}/ml/v1/text/generation?version=2023-05-29"
-WATSONX_EMBED_URL = f"{API_URL}/ml/v1/text/embeddings?version=2023-05-29"
-# Add chat endpoint (preferred over legacy generation)
-WATSONX_CHAT_URL = f"{API_URL}/ml/v1/text/chat?version=2023-05-29"
+WX_API_VERSION = os.getenv("WATSONX_API_VERSION", "2023-05-29")
+WATSONX_GENERATE_URL = f"{API_URL}/ml/v1/text/generation?version={WX_API_VERSION}"
+WATSONX_CHAT_URL = f"{API_URL}/ml/v1/text/chat?version={WX_API_VERSION}"
+WATSONX_EMBED_URL = f"{API_URL}/ml/v1/text/embeddings?version={WX_API_VERSION}"
+
+# MLflow server-side logging flags (add these)
+MLFLOW_AUTO_LOG = os.getenv("MLFLOW_AUTO_LOG", "false").lower() == "true"
+MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "")
+MLFLOW_EXPERIMENT_NAME = os.getenv("MLFLOW_EXPERIMENT_NAME", "ai-agent01")
 
 app = FastAPI(
     title=APP_NAME,
@@ -210,6 +216,7 @@ def generate(req: GenerateRequest):
     if not PROJECT_ID:
         raise HTTPException(status_code=500, detail="Missing WATSONX_PROJECT_ID")
 
+    t0 = time.time()  # optional: for latency metric
     parameters = {
         "decoding_method": "greedy" if req.temperature == 0 else "sample",
         "max_new_tokens": req.max_new_tokens,
@@ -238,7 +245,7 @@ def generate(req: GenerateRequest):
 
         results = data.get("results") or []
         text = results[0].get("generated_text", "") if results else ""
-        return GenerateResponse(generated_text=text, raw=data)
+        resp = GenerateResponse(generated_text=text, raw=data)
     except requests.HTTPError as e:
         status = e.response.status_code if e.response else 502
         body = e.response.text if e.response else str(e)
@@ -259,6 +266,45 @@ def generate(req: GenerateRequest):
         raise HTTPException(status_code=status, detail=body)
     except requests.RequestException as e:
         raise HTTPException(status_code=502, detail=f"watsonx request error: {str(e)}")
+
+    # Optional server-side MLflow logging
+    if MLFLOW_AUTO_LOG and MLFLOW_TRACKING_URI:
+        try:
+            import mlflow
+            mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+            mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
+            run = mlflow.start_run(run_name="generate")
+            try:
+                res0 = (data.get("results") or [{}])[0]
+                mlflow.log_param("model_id", data.get("model_id") or (req.model_id or LLM_MODEL_ID))
+                mlflow.log_params({
+                    "max_new_tokens": req.max_new_tokens,
+                    "temperature": req.temperature,
+                    "top_p": req.top_p,
+                    **({"top_k": req.top_k} if req.top_k else {}),
+                })
+                if "generated_token_count" in res0: mlflow.log_metric("gen_tokens", res0["generated_token_count"])
+                if "input_token_count" in res0: mlflow.log_metric("input_tokens", res0["input_token_count"])
+                mlflow.log_metric("latency_s", time.time() - t0)
+                mlflow.log_text(req.prompt, "prompt.txt")
+                mlflow.log_text(resp.generated_text, "response.txt")
+                mlflow.log_dict(resp.raw, "raw.json")
+            except Exception as ex:
+                logger.warning(f"MLflow auto-log error: {ex}")
+                try:
+                    mlflow.set_tag("mlflow_autolog_error", str(ex))
+                except Exception:
+                    pass
+            finally:
+                # Always finish the run as FINISHED
+                try:
+                    mlflow.end_run(status="FINISHED")
+                except Exception:
+                    pass
+        except Exception as ex:
+            logger.warning(f"MLflow auto-log init skipped: {ex}")
+
+    return resp
 
 
 @app.post("/v1/embeddings", response_model=EmbeddingsResponse, tags=["LLM"])

@@ -285,3 +285,48 @@ Troubleshooting
 - parameters.top_k should be at least 1: Omit top_k or set top_k >= 1.
 - JSON decode error / “Extra data”: Ensure you run a single curl command (don’t paste two on one line).
 - Legacy warning: It’s safe. This service currently uses the text/generation API; you can switch later to chat if desired.
+
+## MLflow integration
+
+What’s implemented
+- Server-side auto logging in /v1/generate:
+  - Logs params (model_id, decoding params), metrics (latency, token counts if available).
+  - Logs artifacts: prompt.txt, response.txt, raw.json.
+  - Ensures runs end with FINISHED (even if a log step raises).
+- Environment flags (read at startup):
+  - MLFLOW_AUTO_LOG=true|false (default false)
+  - MLFLOW_TRACKING_URI (e.g., http://<node-ip>:30500)
+  - MLFLOW_EXPERIMENT_NAME (default ai-agent01)
+- Image dependency:
+  - mlflow==3.3.2 baked into the agent image (or use mlflow-skinny==3.3.2).
+
+Enable (Kubernetes)
+```bash
+# .env (used for Secret ai-agent01-env)
+MLFLOW_AUTO_LOG=true
+MLFLOW_TRACKING_URI=http://<node-ip>:30500
+MLFLOW_EXPERIMENT_NAME=ai-agent01
+
+# Apply and restart
+kubectl -n ai-agent01 delete secret ai-agent01-env
+kubectl -n ai-agent01 create secret generic ai-agent01-env --from-env-file=.env
+kubectl -n ai-agent01 rollout restart deploy/ai-agent01
+```
+
+Verify
+```bash
+# (optional) confirm mlflow is available in the pod
+kubectl -n ai-agent01 exec deploy/ai-agent01 -- python -c "import mlflow; print(mlflow.__version__)"
+
+# trigger a run
+curl -sS -X POST http://<node-ip>:30005/v1/generate \
+  -H "Content-Type: application/json" \
+  -d '{ "prompt": "Summarize MLflow in 3 bullets.", "max_new_tokens": 64, "temperature": 0.7 }' | jq .
+
+# UI: open http://<node-ip>:30500, select experiment ai-agent01
+# You should see: params, metrics (latency_s, token counts), and artifacts (prompt.txt, response.txt, raw.json).
+```
+
+Notes
+- Client-side logging remains supported: you can also call the agent from your app and use mlflow.start_run(...) there.
+- If you don’t want server-side logging, set MLFLOW_AUTO_LOG=false (default).
