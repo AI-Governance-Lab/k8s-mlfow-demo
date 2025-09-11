@@ -145,6 +145,11 @@ Access Swagger UI and ReDoc via NodePort 30005:
 - WATSONX_LLM_MODEL_ID: Text generation model ID, e.g. mistralai/mistral-large.
 - WATSONX_EMBEDDING_MODEL_ID: Embedding model ID, e.g. ibm/slate-125m-english-rtrvr.
 - WATSONX_VERIFY_TLS (optional): set to "false" to disable TLS verification (not recommended).
+- MLflow (optional, for server-side logging):
+  - MLFLOW_AUTO_LOG=true|false (default false) – enable auto logging in /v1/generate
+  - MLFLOW_TRACKING_URI=http://<node-ip>:30500 – your MLflow Tracking server URI
+  - MLFLOW_EXPERIMENT_NAME=ai-agent01 – experiment to write runs to
+- See .env.example for a ready-to-copy template.
 
 ### Text generation (POST /v1/generate)
 - Purpose: produce natural-language text (Q&A, summaries, drafting).
@@ -327,6 +332,23 @@ curl -sS -X POST http://<node-ip>:30005/v1/generate \
 # You should see: params, metrics (latency_s, token counts), and artifacts (prompt.txt, response.txt, raw.json).
 ```
 
-Notes
-- Client-side logging remains supported: you can also call the agent from your app and use mlflow.start_run(...) there.
-- If you don’t want server-side logging, set MLFLOW_AUTO_LOG=false (default).
+### Use with MLflow (client-side)
+You can also call the agent from your app and log to MLflow yourself.
+
+```python
+import os, requests, mlflow
+os.environ["MLFLOW_TRACKING_URI"] = "http://<node-ip>:30500"
+AGENT = "http://<node-ip>:30005"
+
+with mlflow.start_run(run_name="agent-demo"):
+    payload = {"prompt": "Summarize MLflow in 3 bullets.", "max_new_tokens": 100, "temperature": 0.7}
+    r = requests.post(f"{AGENT}/v1/generate", json=payload, timeout=60)
+    r.raise_for_status()
+    out = r.json()
+    mlflow.log_params({k:v for k,v in payload.items() if k!="prompt"})
+    mlflow.log_text(payload["prompt"], "prompt.txt")
+    mlflow.log_text(out.get("generated_text",""), "response.txt")
+    mlflow.log_dict(out, "raw.json")
+```
+
+Example script: llmops/ai_agents/watsonx-ai-agent01-k8s/examples/mlflow_agent_demo.py
