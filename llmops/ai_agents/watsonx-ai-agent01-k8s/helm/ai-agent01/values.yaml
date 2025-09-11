@@ -1,0 +1,29 @@
+image:
+  repository: crevesky/watsonx-ai_agent01
+  tag: latest
+  pullPolicy: Always
+
+replicaCount: 1
+
+service:
+  type: NodePort
+  port: 80
+  containerPort: 8000
+  nodePort: 30005
+
+secrets:
+  create: false
+  existingSecretName: ai-agent01-env
+  # If you ever set create: true, you can put literal values below (not recommended for prod)
+  IBMCLOUD_API_KEY: ""
+  WATSONX_PROJECT_ID: ""
+  WATSONX_API_URL: "https://eu-de.ml.cloud.ibm.com"
+  WATSONX_LLM_MODEL_ID: "mistralai/mistral-medium-2505"
+  WATSONX_EMBEDDING_MODEL_ID: "ibm/slate-125m-english-rtrvr"
+
+command:
+  - /bin/sh
+  - -c
+  - sleep infinity
+
+args: []

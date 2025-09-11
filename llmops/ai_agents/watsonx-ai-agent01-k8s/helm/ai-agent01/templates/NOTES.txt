@@ -1,0 +1,1 @@
+helm install ai-agent01 ./helm/ai-agent01

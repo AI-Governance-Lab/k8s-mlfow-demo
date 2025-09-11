@@ -1,0 +1,9 @@
+FastAPI
+uvicorn
+python-dotenv
+httpx
+pytest
+pytest-asyncio
+pydantic
+redoc
+```

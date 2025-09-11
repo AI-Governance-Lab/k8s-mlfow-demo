@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-agent01-config
+data:
+  # Add any non-sensitive configuration data here
+  exampleKey: "exampleValue"

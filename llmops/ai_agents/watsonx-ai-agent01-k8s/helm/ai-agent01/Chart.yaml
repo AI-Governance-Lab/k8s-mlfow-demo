@@ -1,0 +1,6 @@
+apiVersion: v2
+name: ai-agent01
+description: FastAPI Watsonx AI agent (NodePort 30005)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
