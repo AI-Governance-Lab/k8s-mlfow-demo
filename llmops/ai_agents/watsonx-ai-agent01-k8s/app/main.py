@@ -10,10 +10,11 @@ import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, validator
+from typing import Optional, List, Literal
 import uuid
 from datetime import datetime, timezone
-from typing import Literal  # keep only what you need
 import logging
+import json
 
 APP_NAME = "watsonx-ai-agent01"
 API_URL = os.getenv("WATSONX_API_URL", "https://eu-de.ml.cloud.ibm.com").rstrip("/")
@@ -87,6 +88,7 @@ class GenerateRequest(BaseModel):
 class GenerateResponse(BaseModel):
     generated_text: str
     raw: dict
+    mlflow_run_id: Optional[str] = None  # add this so clients can link to the run
 
 
 class EmbeddingsRequest(BaseModel):
@@ -101,6 +103,13 @@ class EmbeddingsResponse(BaseModel):
 class ChatMessage(BaseModel):
     role: Literal["system", "user", "assistant"]
     content: str
+
+
+class FeedbackRequest(BaseModel):
+    run_id: str
+    rating: int  # e.g., -1 (down), 0 (neutral), 1 (up) or 1..5
+    comment: Optional[str] = None
+    label: Optional[str] = None  # optional short label (e.g., "correctness", "style")
 
 
 # initialize logger for error details
@@ -213,10 +222,7 @@ async def read_example():
 
 @app.post("/v1/generate", response_model=GenerateResponse, tags=["LLM"])
 def generate(req: GenerateRequest):
-    if not PROJECT_ID:
-        raise HTTPException(status_code=500, detail="Missing WATSONX_PROJECT_ID")
-
-    t0 = time.time()  # optional: for latency metric
+    t0 = time.time()
     parameters = {
         "decoding_method": "greedy" if req.temperature == 0 else "sample",
         "max_new_tokens": req.max_new_tokens,
@@ -245,7 +251,7 @@ def generate(req: GenerateRequest):
 
         results = data.get("results") or []
         text = results[0].get("generated_text", "") if results else ""
-        resp = GenerateResponse(generated_text=text, raw=data)
+        resp = GenerateResponse(generated_text=text, raw=data)  # initial response
     except requests.HTTPError as e:
         status = e.response.status_code if e.response else 502
         body = e.response.text if e.response else str(e)
@@ -275,8 +281,26 @@ def generate(req: GenerateRequest):
             mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
             run = mlflow.start_run(run_name="generate")
             try:
+                # 1) Description (shows in UI)
+                note = f"Prompt (truncated): {req.prompt[:200]}{'...' if len(req.prompt) > 200 else ''}"
+                mlflow.set_tag("mlflow.note.content", note)
+
+                # 2) Helpful tags for search/compare
+                mlflow.set_tags({
+                    "route": "v1/generate",
+                    "model_id": data.get("model_id") or (req.model_id or LLM_MODEL_ID),
+                    "pod": os.getenv("HOSTNAME", ""),
+                    "api_version": os.getenv("WATSONX_API_VERSION", "2023-05-29"),
+                })
+
+                # 3) System metrics (CPU, mem, net) while the run is active
+                try:
+                    mlflow.enable_system_metrics_logging()
+                except Exception:
+                    pass  # not fatal if unsupported
+
+                # 4) Params / metrics / artifacts (existing)
                 res0 = (data.get("results") or [{}])[0]
-                mlflow.log_param("model_id", data.get("model_id") or (req.model_id or LLM_MODEL_ID))
                 mlflow.log_params({
                     "max_new_tokens": req.max_new_tokens,
                     "temperature": req.temperature,
@@ -289,14 +313,30 @@ def generate(req: GenerateRequest):
                 mlflow.log_text(req.prompt, "prompt.txt")
                 mlflow.log_text(resp.generated_text, "response.txt")
                 mlflow.log_dict(resp.raw, "raw.json")
-            except Exception as ex:
-                logger.warning(f"MLflow auto-log error: {ex}")
+
+                # 5) Optional: log the request as a Dataset (fills “Datasets used”)
+                # Requires pandas; if not installed, this silently skips.
                 try:
-                    mlflow.set_tag("mlflow_autolog_error", str(ex))
+                    import pandas as pd
+                    from mlflow.data import from_pandas
+                    ds = from_pandas(pd.DataFrame([{
+                        "prompt": req.prompt,
+                        "max_new_tokens": req.max_new_tokens,
+                        "temperature": req.temperature,
+                        "top_p": req.top_p,
+                        "top_k": req.top_k or None,
+                    }]), source="api")
+                    mlflow.log_input(ds, context="inference")
                 except Exception:
                     pass
+
+                # Include run_id in response (useful for deep-linking)
+                try:
+                    resp.mlflow_run_id = run.info.run_id  # if your response model supports it
+                except Exception:
+                    pass
+
             finally:
-                # Always finish the run as FINISHED
                 try:
                     mlflow.end_run(status="FINISHED")
                 except Exception:
@@ -339,3 +379,26 @@ def embeddings(req: EmbeddingsRequest):
         raise HTTPException(status_code=e.response.status_code if e.response else 502, detail=detail)
     except requests.RequestException as e:
         raise HTTPException(status_code=502, detail=f"watsonx embeddings error: {str(e)}")
+
+
+@app.post("/v1/feedback", tags=["LLM"])
+def feedback(req: FeedbackRequest):
+    if not MLFLOW_TRACKING_URI:
+        raise HTTPException(status_code=400, detail="MLFLOW_TRACKING_URI not set")
+    try:
+        import mlflow
+        mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+        # Log as metrics + tags on the existing run
+        # Note: MLflow requires an active run to log; use client API to set tags/metrics on run_id.
+        from mlflow.tracking import MlflowClient
+        c = MlflowClient()
+        ts = int(datetime.now(tz=timezone.utc).timestamp() * 1000)
+        c.log_metric(req.run_id, key="human_rating", value=float(req.rating), timestamp=ts)
+        if req.comment:
+            c.set_tag(req.run_id, "human_comment", req.comment)
+        if req.label:
+            c.set_tag(req.run_id, "human_label", req.label)
+        return {"status": "ok", "run_id": req.run_id}
+    except Exception as e:
+        logger.warning(f"feedback log failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

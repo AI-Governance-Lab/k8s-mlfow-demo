@@ -291,64 +291,77 @@ Troubleshooting
 - JSON decode error / “Extra data”: Ensure you run a single curl command (don’t paste two on one line).
 - Legacy warning: It’s safe. This service currently uses the text/generation API; you can switch later to chat if desired.
 
-## MLflow integration
+## MLflow integration (server-side)
 
-What’s implemented
-- Server-side auto logging in /v1/generate:
-  - Logs params (model_id, decoding params), metrics (latency, token counts if available).
-  - Logs artifacts: prompt.txt, response.txt, raw.json.
-  - Ensures runs end with FINISHED (even if a log step raises).
-- Environment flags (read at startup):
-  - MLFLOW_AUTO_LOG=true|false (default false)
-  - MLFLOW_TRACKING_URI (e.g., http://<node-ip>:30500)
-  - MLFLOW_EXPERIMENT_NAME (default ai-agent01)
-- Image dependency:
-  - mlflow==3.3.2 baked into the agent image (or use mlflow-skinny==3.3.2).
+The agent can auto-log each /v1/generate call to MLflow:
+- Params: model_id, max_new_tokens, temperature, top_p/top_k
+- Metrics: latency_s, input/generated token counts (if present)
+- Artifacts: prompt.txt, response.txt, raw.json
+- Runs end with FINISHED (even if a log step fails)
 
-Enable (Kubernetes)
-```bash
-# .env (used for Secret ai-agent01-env)
+Required environment variables (via Secret ai-agent01-env)
+- IBM/Watsonx:
+  - IBMCLOUD_API_KEY
+  - WATSONX_PROJECT_ID
+  - WATSONX_API_URL (e.g., https://eu-de.ml.cloud.ibm.com)
+  - WATSONX_LLM_MODEL_ID (e.g., mistralai/mistral-medium-2505)
+- MLflow tracking (in-cluster recommended):
+  - MLFLOW_AUTO_LOG=true
+  - MLFLOW_TRACKING_URI=http://mlflow-mlflow.mlflow.svc.cluster.local:5000
+  - MLFLOW_EXPERIMENT_NAME=ai-agent01
+- MinIO (MLflow artifact store):
+  - AWS_ACCESS_KEY_ID=mlflow
+  - AWS_SECRET_ACCESS_KEY=mlflowminio
+  - AWS_DEFAULT_REGION=us-east-1
+  - MLFLOW_S3_ENDPOINT_URL=http://mlflow-minio.mlflow.svc.cluster.local:9000
+  - AWS_S3_ADDRESSING_STYLE=path
+  - AWS_EC2_METADATA_DISABLED=true
+- Optional:
+  - GIT_PYTHON_REFRESH=quiet  (silences git warning inside the container)
+
+Example .env (do not commit real secrets)
+```dotenv
+IBMCLOUD_API_KEY=********
+WATSONX_PROJECT_ID=********
+WATSONX_API_URL=https://eu-de.ml.cloud.ibm.com
+WATSONX_LLM_MODEL_ID=mistralai/mistral-medium-2505
+
 MLFLOW_AUTO_LOG=true
-MLFLOW_TRACKING_URI=http://<node-ip>:30500
+MLFLOW_TRACKING_URI=http://mlflow-mlflow.mlflow.svc.cluster.local:5000
 MLFLOW_EXPERIMENT_NAME=ai-agent01
 
-# Apply and restart
-kubectl -n ai-agent01 delete secret ai-agent01-env
-kubectl -n ai-agent01 create secret generic ai-agent01-env --from-env-file=.env
-kubectl -n ai-agent01 rollout restart deploy/ai-agent01
+AWS_ACCESS_KEY_ID=mlflow
+AWS_SECRET_ACCESS_KEY=mlflowminio
+AWS_DEFAULT_REGION=us-east-1
+MLFLOW_S3_ENDPOINT_URL=http://mlflow-minio.mlflow.svc.cluster.local:9000
+AWS_S3_ADDRESSING_STYLE=path
+AWS_EC2_METADATA_DISABLED=true
+
+GIT_PYTHON_REFRESH=quiet
 ```
 
-Verify
+Deploy/update
 ```bash
-# (optional) confirm mlflow is available in the pod
-kubectl -n ai-agent01 exec deploy/ai-agent01 -- python -c "import mlflow; print(mlflow.__version__)"
+kubectl create ns ai-agent01 || true
+kubectl -n ai-agent01 delete secret ai-agent01-env 2>/dev/null || true
+kubectl -n ai-agent01 create secret generic ai-agent01-env --from-env-file=.env
 
-# trigger a run
+# Using Helm chart in this repo
+helm upgrade --install ai-agent01 helm/ai-agent01 -n ai-agent01 \
+  --set image.repository=docker.io/crevesky/watsonx-ai_agent01 \
+  --set image.tag=core-lean
+kubectl -n ai-agent01 rollout status deploy/ai-agent01
+```
+
+Run the API in the pod (container default is idle)
+```bash
+# Exec in and start uvicorn manually (main.py entry)
+kubectl -n ai-agent01 exec -it deploy/ai-agent01 -- sh -lc 'uvicorn main:app --host 0.0.0.0 --port 8000'
+```
+
+Test and verify logging
+```bash
+# NodePort (default 30005 in chart)
 curl -sS -X POST http://<node-ip>:30005/v1/generate \
-  -H "Content-Type: application/json" \
-  -d '{ "prompt": "Summarize MLflow in 3 bullets.", "max_new_tokens": 64, "temperature": 0.7 }' | jq .
-
-# UI: open http://<node-ip>:30500, select experiment ai-agent01
-# You should see: params, metrics (latency_s, token counts), and artifacts (prompt.txt, response.txt, raw.json).
-```
-
-### Use with MLflow (client-side)
-You can also call the agent from your app and log to MLflow yourself.
-
-```python
-import os, requests, mlflow
-os.environ["MLFLOW_TRACKING_URI"] = "http://<node-ip>:30500"
-AGENT = "http://<node-ip>:30005"
-
-with mlflow.start_run(run_name="agent-demo"):
-    payload = {"prompt": "Summarize MLflow in 3 bullets.", "max_new_tokens": 100, "temperature": 0.7}
-    r = requests.post(f"{AGENT}/v1/generate", json=payload, timeout=60)
-    r.raise_for_status()
-    out = r.json()
-    mlflow.log_params({k:v for k,v in payload.items() if k!="prompt"})
-    mlflow.log_text(payload["prompt"], "prompt.txt")
-    mlflow.log_text(out.get("generated_text",""), "response.txt")
-    mlflow.log_dict(out, "raw.json")
-```
-
-Example script: llmops/ai_agents/watsonx-ai-agent01-k8s/examples/mlflow_agent_demo.py
+  -H 'Content-Type: application/json' \
+  -d '{ "prompt": "hello", "max_new_tokens": 16, "temperature": 0.7 }' | jq .
