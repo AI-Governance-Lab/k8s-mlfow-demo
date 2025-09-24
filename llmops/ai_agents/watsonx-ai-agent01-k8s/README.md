@@ -365,3 +365,41 @@ Test and verify logging
 curl -sS -X POST http://<node-ip>:30005/v1/generate \
   -H 'Content-Type: application/json' \
   -d '{ "prompt": "hello", "max_new_tokens": 16, "temperature": 0.7 }' | jq .
+```
+
+## Change model quickly (relative paths)
+
+This app reads runtime config from the Kubernetes Secret ai-agent01-env (created from ./.env).
+
+1) Edit .env
+- Open ./.env and set:
+  - WATSONX_LLM_MODEL_ID=ibm/granite-3-3-8b-instruct
+  - (optional) WATSONX_EMBEDDING_MODEL_ID and WATSONX_API_URL
+
+2) Update the Secret in-place (no delete needed)
+```bash
+kubectl -n ai-agent01 create secret generic ai-agent01-env \
+  --from-env-file=.env \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+3) Restart the deployment to pick up changes
+```bash
+kubectl -n ai-agent01 rollout restart deploy/ai-agent01
+kubectl -n ai-agent01 rollout status deploy/ai-agent01
+```
+
+4) Verify inside the pod
+```bash
+POD=$(kubectl get pods -n ai-agent01 -l app.kubernetes.io/name=ai-agent01 -o jsonpath="{.items[0].metadata.name}")
+kubectl -n ai-agent01 exec "$POD" -c ai-agent01 -- sh -lc 'printenv WATSONX_LLM_MODEL_ID'
+```
+
+5) If the API is started manually (container defaults to idle), restart it
+```bash
+kubectl -n ai-agent01 exec "$POD" -c ai-agent01 -- sh -lc 'pkill -f "uvicorn" || true; cd /app && nohup uvicorn main:app --host 0.0.0.0 --port 8000 >/tmp/uvicorn.log 2>&1 &'
+```
+
+Notes
+- Recreate the Secret only if IBMCLOUD_API_KEY or other sensitive values changed.
+- Ensure the chosen model is available in your WATSONX_API_URL region.
