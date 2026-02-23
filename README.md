@@ -1,4 +1,4 @@
-# MLflow 3.3 on k3s with Helm (LLMOps-ready)
+# MLflow 3.X on k3s with Helm (LLMOps-ready)
 
 Deploy MLflow 3.3.2 tracking on k3s with PostgreSQL + MinIO, including LLMOps basics and examples.
 
