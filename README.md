@@ -1,6 +1,6 @@
-# MLflow 3.X on k3s with Helm (LLMOps-ready)
+# MLflow 3.x on k3s with Helm (LLMOps-ready)
 
-Deploy MLflow 3.3.X tracking on k3s with PostgreSQL + MinIO, including LLMOps basics and examples.
+Deploy MLflow 3.3.x tracking on k3s with PostgreSQL + MinIO, including LLMOps basics and examples.
 
 ## What is MLflow (for managers)
 MLflow is a system of record for AI work—covering traditional machine learning and modern generative AI (LLMs, chatbots, AI agents). It helps teams:
